@@ -1,5 +1,0 @@
-[2026-11-16 11:44:10] ------------------------------------------------------------
-[2026-11-16 11:44:10] Nb of datasets: 3
-[2026-11-16 11:50:43] Dataset #1/#3: 9003-MONK-3_432r_6f - Time taken for training all samplings: 392 seconds
-[2026-11-16 11:54:15] Dataset #2/#3: 9001-MONK-1_432r_6f - Time taken for training all samplings: 212 seconds
-[2026-11-16 11:57:38] Dataset #3/#3: 9002-MONK-2_432r_6f - Time taken for training all samplings: 203 seconds

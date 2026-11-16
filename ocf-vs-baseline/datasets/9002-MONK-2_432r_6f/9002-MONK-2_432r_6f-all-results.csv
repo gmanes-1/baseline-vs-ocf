@@ -1,4 +1,0 @@
-model,avg_accuracy,avg_precision,avg_recall,avg_f1_score,avg_mcc,avg_jaccard,avg_youden,avg_roc_auc,total_tp,total_tn,total_fp,total_fn
-OCFHamming,0.45,0.27,0.45,0.33,-0.09,0.2,-0.09,0.41,63,137,163,77
-BaselineExact,0.68,0.0,0.0,0.0,0.0,0.0,0.0,0.5,0,300,0,140
-BaselineLiteral,0.68,0.0,0.0,0.0,0.0,0.0,0.0,0.48,0,300,0,140
