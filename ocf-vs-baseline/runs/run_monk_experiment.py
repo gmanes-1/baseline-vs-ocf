@@ -29,7 +29,7 @@ METRICS = ["accuracy", "precision", "recall", "f1", "mcc", "jaccard", "youden", 
 
 def load_official_file(path):
     names = ["y", *FEATURES, "id"]
-    frame = pd.read_csv(path, sep=r"\\s+", header=None, names=names, dtype=str)
+    frame = pd.read_csv(path, sep=r"\s+", engine="python", header=None, names=names, dtype=str)
     if frame.shape[1] != 8 or frame.isna().any().any():
         raise ValueError(f"Unexpected or incomplete Monk file: {path}")
     frame["y"] = frame["y"].astype(int)
