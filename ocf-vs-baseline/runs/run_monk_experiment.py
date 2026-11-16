@@ -1,13 +1,12 @@
 """Reproducible OCF vs Prade-inspired baseline evaluation on the official Monk files.
 
-Run from any directory:
+Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
 Thresholds are selected only on validation data carved from .train.
 """
 from pathlib import Path
-import csv
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
