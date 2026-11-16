@@ -142,10 +142,28 @@ def evaluate_dataset(dataset_number):
         test_delta = model.score(x_test)
         threshold, val_j = choose_threshold(y_val, val_delta, "ge")
         pred = predict(test_delta, threshold, "ge")
-        row = {"dataset": dataset_number, "repeat": repeat, "model": "BaselineExact",
+        row = {"dataset": dataset_number, "repeat": repeat, "model": "BaselineExact_Validation",
                "threshold": threshold, "validation_youden": val_j}
         row.update(metrics(y_test, pred, test_delta))
         run_rows.append(row)
+
+    # Additional experiment: BaselineExact trained on all official training rows.
+    # Its positive l-cut is fixed at zero in advance, so no validation is used.
+    x_train = train[FEATURES].to_numpy(dtype=object)
+    y_train = train["y"].to_numpy()
+    full_train_model = ExactDeltaBaseline().fit(x_train, y_train)
+    full_train_test_delta = full_train_model.score(x_test)
+    fixed_threshold = 0.0
+    full_train_pred = predict(full_train_test_delta, fixed_threshold, "ge")
+    row = {
+        "dataset": dataset_number,
+        "repeat": 1,
+        "model": "BaselineExact_NoValidation",
+        "threshold": fixed_threshold,
+        "validation_youden": np.nan,
+    }
+    row.update(metrics(y_test, full_train_pred, full_train_test_delta))
+    run_rows.append(row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
