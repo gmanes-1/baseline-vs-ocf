@@ -16,13 +16,15 @@ Requires Python, NumPy, pandas, and scikit-learn.
 - **Preserves every official test row unchanged (432 rows per Monk task).** The test files are never filtered or rewritten.
 - The official training file is split into 10 reproducible, stratified 90% fit / 10% validation partitions (random seed 42).
 - The same fit/validation partition is used for OCF and BaselineExact in each repetition.
-- Each model's threshold is selected by maximising Youden's J on validation only. The chosen threshold is then applied to all 432 official test rows.
+- In the original validation experiment, each model is trained on the 90% fit partition and its threshold is selected by maximising Youden's J on the 10% validation partition. The chosen threshold is then applied to all 432 official test rows.
+- An additional **BaselineExact_NoValidation** experiment is run once per dataset: BaselineExact is trained on 100% of the official training file and uses the fixed threshold `delta >= 0`. It does not use validation data.
+- OCF remains unchanged and is not run without validation.
 - No test labels are used for fitting or threshold selection.
 
 ## Models
 
 - **OCF:** uses the categorical scaled-distance calculation in `datadistances.py`: a matching category costs 0, a mismatch costs 100; a positive reference example contributes that distance and a negative reference contributes 100 minus that distance. The OCF shift is 600 for six categorical features. Lower OCF is the positive direction.
-- **BaselineExact:** Prade-style cumulative delta with each complete feature tuple as one piece of information (+1 for a positive training example, -1 for a negative one).
+- **BaselineExact:** Prade-style cumulative delta with each complete feature tuple as one piece of information (+1 for a positive training example, -1 for a negative one). The validation variant selects its threshold on validation; the no-validation variant fixes it at zero before evaluation.
 - For BaselineExact, the operational positive-class rule is the positive `l`-cut: predict positive iff `delta(x) >= l`. Section 2 defines the cut as a set of interpretations; this explicit rule makes it usable as a binary classifier and is an implementation convention, not a claim that the paper specifies all classification details.
 
 ## Important benchmark caveat
@@ -34,7 +36,7 @@ The official Monk files contain overlap between training and test IDs. This expe
 Written to `ocf-vs-baseline/results/monk-experiment/`:
 
 - `per_run_results.csv`: one row per model, Monk task, and repetition, including the validation-selected threshold and official-test metrics.
-- `summary_results.csv`: mean and sample standard deviation of each metric across 10 repetitions, plus summed confusion counts.
+- `summary_results.csv`: mean and sample standard deviation of each metric across repetitions, plus summed confusion counts. The two validation models have 10 repetitions; `BaselineExact_NoValidation` has one full-training run per dataset (its standard deviations are undefined).
 - `benchmark_overlap.csv`: official train/test row counts and overlap diagnostics.
 
 Metrics: accuracy, precision, recall, F1, MCC, positive-class Jaccard, Youden's J, and ROC AUC. ROC AUC uses `-OCF` for OCF and the delta score for BaselineExact.
