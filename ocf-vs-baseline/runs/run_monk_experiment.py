@@ -1,4 +1,4 @@
-"""Reproducible OCF vs Prade-inspired baseline evaluation on the official Monk files.
+"""Reproducible OCF vs Prade-inspired exact-baseline evaluation on official Monk files.
 
 Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
@@ -29,7 +29,7 @@ METRICS = ["accuracy", "precision", "recall", "f1", "mcc", "jaccard", "youden", 
 
 def load_official_file(path):
     names = ["y", *FEATURES, "id"]
-    frame = pd.read_csv(path, sep=r"\s+", header=None, names=names, dtype=str)
+    frame = pd.read_csv(path, sep=r"\\s+", header=None, names=names, dtype=str)
     if frame.shape[1] != 8 or frame.isna().any().any():
         raise ValueError(f"Unexpected or incomplete Monk file: {path}")
     frame["y"] = frame["y"].astype(int)
@@ -82,34 +82,23 @@ def ocf_scores(query_x, reference_x, reference_y):
     """Same scaled categorical distance used by datadistances.py, minus its shift."""
     mismatch = (query_x[:, None, :] != reference_x[None, :, :]).astype(np.int32)
     mismatch_cost = mismatch * CATEGORICAL_MISMATCH_COST
-    # Positive reference: distance; negative reference: MAX_SCALING_VALUE - distance.
     contributions = np.where(reference_y[None, :, None] == 1,
                               mismatch_cost, CATEGORICAL_MISMATCH_COST - mismatch_cost)
     return contributions.sum(axis=(1, 2)).astype(float) - OCF_SHIFT
 
 
-class DeltaBaseline:
-    """Cumulated +1/-1 delta; exact interpretations or individual literals."""
-    def __init__(self, variant):
-        if variant not in ("exact", "literal"):
-            raise ValueError(variant)
-        self.variant = variant
-
+class ExactDeltaBaseline:
+    """Prade-inspired cumulative delta using each complete feature tuple as one piece."""
     def fit(self, x, y):
         self.delta = {}
         for row, label in zip(x, y):
+            key = tuple(row)
             increment = 1 if int(label) == 1 else -1
-            keys = [tuple(row)] if self.variant == "exact" else [(i, value) for i, value in enumerate(row)]
-            for key in keys:
-                self.delta[key] = self.delta.get(key, 0) + increment
+            self.delta[key] = self.delta.get(key, 0) + increment
         return self
 
     def score(self, x):
-        scores = []
-        for row in x:
-            keys = [tuple(row)] if self.variant == "exact" else [(i, value) for i, value in enumerate(row)]
-            scores.append(sum(self.delta.get(key, 0) for key in keys))
-        return np.asarray(scores, dtype=float)
+        return np.asarray([self.delta.get(tuple(row), 0) for row in x], dtype=float)
 
 
 def evaluate_dataset(dataset_number):
@@ -138,7 +127,6 @@ def evaluate_dataset(dataset_number):
         x_val = val[FEATURES].to_numpy(dtype=object)
         y_val = val["y"].to_numpy()
 
-        # OCF: threshold chosen on validation, then applied unchanged to official test.
         val_ocf = ocf_scores(x_val, x_fit, y_fit)
         test_ocf = ocf_scores(x_test, x_fit, y_fit)
         ocf_thr, val_ocf_youden = choose_threshold(y_val, val_ocf, "le")
@@ -148,18 +136,16 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Prade-inspired positive l-cut operationalisation: predict positive iff delta >= l.
-        for variant in ("exact", "literal"):
-            model = DeltaBaseline(variant).fit(x_fit, y_fit)
-            val_delta = model.score(x_val)
-            test_delta = model.score(x_test)
-            threshold, val_j = choose_threshold(y_val, val_delta, "ge")
-            pred = predict(test_delta, threshold, "ge")
-            row = {"dataset": dataset_number, "repeat": repeat,
-                   "model": "BaselineExact" if variant == "exact" else "BaselineLiteral",
-                   "threshold": threshold, "validation_youden": val_j}
-            row.update(metrics(y_test, pred, test_delta))
-            run_rows.append(row)
+        # Prade-inspired positive l-cut: predict positive iff delta >= l.
+        model = ExactDeltaBaseline().fit(x_fit, y_fit)
+        val_delta = model.score(x_val)
+        test_delta = model.score(x_test)
+        threshold, val_j = choose_threshold(y_val, val_delta, "ge")
+        pred = predict(test_delta, threshold, "ge")
+        row = {"dataset": dataset_number, "repeat": repeat, "model": "BaselineExact",
+               "threshold": threshold, "validation_youden": val_j}
+        row.update(metrics(y_test, pred, test_delta))
+        run_rows.append(row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
