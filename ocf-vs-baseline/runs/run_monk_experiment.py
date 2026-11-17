@@ -237,7 +237,7 @@ def build_supplementary_models():
     """Create fresh categorical-feature pipelines for each Monk repetition."""
     estimators = {
         "Logistic Regression": LogisticRegression(max_iter=5000, random_state=RANDOM_SEED),
-        "SVM": SVC(probability=True, random_state=RANDOM_SEED),
+        "SVM": SVC(probability=False, random_state=RANDOM_SEED),
         "Decision Tree": DecisionTreeClassifier(random_state=RANDOM_SEED),
         "Random Forest": RandomForestClassifier(random_state=RANDOM_SEED),
         "Gradient Boosting": GradientBoostingClassifier(random_state=RANDOM_SEED),
@@ -247,7 +247,7 @@ def build_supplementary_models():
         "Majority Classifier": DummyClassifier(strategy="most_frequent"),
     }
     return {
-        name: make_pipeline(OneHotEncoder(handle_unknown="ignore"), estimator)
+        name: make_pipeline(OneHotEncoder(handle_unknown="ignore", sparse_output=False), estimator)
         for name, estimator in estimators.items()
     }
 
