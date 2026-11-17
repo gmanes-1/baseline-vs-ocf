@@ -400,6 +400,42 @@ def create_plots(summary_frame, run_frame):
         fig.savefig(OUTPUT / f"monk_{number}_mcc_roc_auc.png", dpi=180)
         plt.close(fig)
 
+        # Radar / spider plot: all models on the same eight metric spokes.
+        # MCC and Youden range from -1 to 1, so map them to [0, 1] for a
+        # common radial scale. Their axis labels explicitly note this mapping.
+        radar_metrics = [
+            ("mean_accuracy", "Accuracy", False),
+            ("mean_precision", "Precision", False),
+            ("mean_recall", "Recall", False),
+            ("mean_f1", "F1", False),
+            ("mean_mcc", "MCC (rescaled)", True),
+            ("mean_jaccard", "Jaccard", False),
+            ("mean_youden", "Youden J (rescaled)", True),
+            ("mean_roc_auc", "ROC AUC", False),
+        ]
+        angles = np.linspace(0, 2 * np.pi, len(radar_metrics), endpoint=False).tolist()
+        closed_angles = angles + angles[:1]
+        fig, ax = plt.subplots(figsize=(11, 9), subplot_kw={"polar": True})
+        for model in models:
+            values = []
+            for metric, _label, signed in radar_metrics:
+                value = float(data.loc[model, metric])
+                values.append((value + 1.0) / 2.0 if signed else value)
+            closed_values = values + values[:1]
+            ax.plot(closed_angles, closed_values, linewidth=1.6,
+                    label=display_names.get(model, model))
+            ax.fill(closed_angles, closed_values, alpha=0.035)
+        ax.set_xticks(angles)
+        ax.set_xticklabels([label for _metric, label, _signed in radar_metrics])
+        ax.set_ylim(0, 1)
+        ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+        ax.set_title(f"Monk-{number}: all-model performance spider plot", pad=28)
+        ax.legend(loc="upper left", bbox_to_anchor=(1.12, 1.08), fontsize=8)
+        fig.tight_layout()
+        fig.savefig(OUTPUT / f"monk_{number}_spider_plot.png",
+                    dpi=200, bbox_inches="tight")
+        plt.close(fig)
+
         # Summed confusion counts across the 10 repetitions, one panel per model.
         fig, axes = plt.subplots(3, 4, figsize=(14, 10))
         for ax, model in zip(axes.flat, models):
