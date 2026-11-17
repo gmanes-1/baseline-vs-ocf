@@ -1,11 +1,12 @@
-"""Reproducible OCF vs Baseline evaluation on official Monk files.
+"""Reproducible OCF vs baseline evaluation on official Monk files.
 
 Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
-OCF thresholds are selected on validation data. Baseline is evaluated both
-with validation-constrained formula repair and without repair (fit-only).
+OCF thresholds are selected on validation data. The Original Baseline is
+trained once on the complete training file without refinement. The Baseline
+with Hypothesis Refinement uses validation constraints to refine its formula.
 """
 from itertools import combinations
 from pathlib import Path
@@ -90,8 +91,8 @@ def ocf_scores(query_x, reference_x, reference_y):
     return contributions.sum(axis=(1, 2)).astype(float) - OCF_SHIFT
 
 
-class Baseline:
-    """Learn a disjunction of conjunctive attribute-value terms.
+class BaselineWithHypothesisRefinement:
+    """Learn a disjunction of conjunctive attribute-value hypotheses.
 
     Fit first aggregates duplicate interpretations with delta(w) = positive
     count - negative count. Interpretations with delta >= 0 are positive and
@@ -103,12 +104,12 @@ class Baseline:
     shorter terms. Full-feature terms ensure every separable positive can be
     covered.
 
-    Validation repair adds validation positives and negatives to the formula
-    constraints and rebuilds the DNF using the same positive-preserving cover.
-    Thus no separable positive interpretation from fit or validation is lost,
-    and no known negative interpretation is covered. If an identical feature
-    vector has both labels, perfect separation is impossible; the conflict is
-    reported rather than hidden.
+    Hypothesis refinement adds validation positives and negatives to the
+    formula constraints and rebuilds the DNF using the same positive-preserving
+    cover. Thus no separable positive interpretation from fit or validation is
+    lost, and no known negative interpretation is covered. If an identical
+    feature vector has both labels, perfect separation is impossible; the
+    conflict is reported rather than hidden.
     """
 
     def __init__(self):
@@ -133,7 +134,6 @@ class Baseline:
             self.uncovered_positives = set()
             return
 
-        # Candidate term -> indices of positive interpretations it covers.
         candidates = {}
         for positive_index, row in enumerate(positives):
             for size in range(1, self.n_features + 1):
@@ -197,14 +197,14 @@ class Baseline:
     def predict(self, x):
         return (self.score(x) > 0).astype(int)
 
-    def repair(self, x, y):
-        """Refine/split the DNF under all fit and validation constraints.
+    def refine(self, x, y):
+        """Refine the DNF using fit and validation constraints.
 
         Rebuilding the formula is equivalent to specializing or splitting
         offending disjuncts: candidate conjunctive terms are retained only
         when they exclude every known negative. Greedy set cover then combines
         those terms with OR to cover every separable positive interpretation.
-        Returns validation errors before and after repair.
+        Returns validation errors before and after refinement.
         """
         x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
         y = np.asarray(y).astype(int)
@@ -256,37 +256,38 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Repaired Baseline: same fit, then incorporate validation constraints.
-        model = Baseline().fit(x_fit, y_fit)
+        # Baseline with Hypothesis Refinement: fit, then incorporate validation constraints.
+        model = BaselineWithHypothesisRefinement().fit(x_fit, y_fit)
         val_acc_before = float((model.predict(x_val) == y_val).mean())
-        errors_before, errors_after = model.repair(x_val, y_val)
+        errors_before, errors_after = model.refine(x_val, y_val)
         test_score = model.score(x_test)
         row = {
-            "dataset": dataset_number, "repeat": repeat, "model": "Baseline",
+            "dataset": dataset_number, "repeat": repeat,
+            "model": "Baseline with Hypothesis Refinement",
             "threshold": np.nan, "validation_youden": np.nan,
-            "validation_accuracy_before_repair": val_acc_before,
-            "validation_errors_before": errors_before,
-            "validation_errors_after": errors_after,
+            "validation_accuracy_before_refinement": val_acc_before,
+            "validation_errors_before_refinement": errors_before,
+            "validation_errors_after_refinement": errors_after,
             "uncovered_positive_patterns": len(model.uncovered_positives),
             "conflicting_patterns": len(model.conflicting_patterns),
         }
         row.update(metrics(y_test, (test_score > 0).astype(int), test_score))
         run_rows.append(row)
 
-    # Fit-only Baseline uses the complete official training set once.
-    # There is no validation split and no repair for this variant.
+    # Original Baseline is fitted once on all official training data.
+    # It has no validation split and performs no hypothesis refinement.
     x_full_train = train[FEATURES].to_numpy(dtype=object)
     y_full_train = train["y"].to_numpy()
-    no_repair_model = Baseline().fit(x_full_train, y_full_train)
-    no_repair_test_score = no_repair_model.score(x_test)
+    original_baseline = BaselineWithHypothesisRefinement().fit(x_full_train, y_full_train)
+    original_test_score = original_baseline.score(x_test)
     row = {
-        "dataset": dataset_number, "repeat": 0, "model": "Baseline_NoRepair",
+        "dataset": dataset_number, "repeat": 0, "model": "Original Baseline",
         "threshold": np.nan, "validation_youden": np.nan,
         "validation_accuracy": np.nan, "validation_errors": np.nan,
-        "uncovered_positive_patterns": len(no_repair_model.uncovered_positives),
-        "conflicting_patterns": len(no_repair_model.conflicting_patterns),
+        "uncovered_positive_patterns": len(original_baseline.uncovered_positives),
+        "conflicting_patterns": len(original_baseline.conflicting_patterns),
     }
-    row.update(metrics(y_test, (no_repair_test_score > 0).astype(int), no_repair_test_score))
+    row.update(metrics(y_test, (original_test_score > 0).astype(int), original_test_score))
     run_rows.append(row)
 
     return run_rows, {
