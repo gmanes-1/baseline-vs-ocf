@@ -9,7 +9,7 @@ The model suite and evaluation procedure are ported from
 `IteratedBeliefChangeML/python-code.zip`. The original source README specifies
 this sequence:
 
-1. Retrieve and preprocess the selected UCI datasets.
+1. Retrieve and preprocess the selected UCI datasets with `process_external_datasets/retrieve_uci_datasets.py`.
 2. Generate 10 stratified 90/10 train/test samplings per dataset.
 3. Train and test the supplementary classifiers.
 4. Construct OCF representations for the training samplings.
@@ -27,11 +27,13 @@ choices and explicit `max_iter=5000` settings follow the source runner.
 
 Set `KRML_DATASETS` to the absolute path of the processed UCI dataset root.
 It must contain the per-dataset folders and files expected by `to_file.py`.
-The source README describes 58 selected UCI datasets. Dataset retrieval and
-preprocessing must be completed before running the experiment stages.
+The source README describes 58 selected UCI datasets. Install dependencies,
+then retrieve and preprocess the selected datasets with the ported source
+script before running the experiment stages:
 
 ```bash
 export KRML_DATASETS="/absolute/path/to/processed/dataset"
+python process_external_datasets/retrieve_uci_datasets.py
 ```
 
 ### Run the original stages
