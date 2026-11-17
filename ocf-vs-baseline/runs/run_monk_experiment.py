@@ -4,10 +4,13 @@ Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
-Thresholds are selected only on validation data carved from .train.
+OCF thresholds are selected on validation data. Baseline learns a DNF formula
+on fit data and repairs it with validation constraints while preserving all
+separable positive interpretations.
 """
 from itertools import combinations
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
@@ -24,7 +27,6 @@ N_REPEATS = 10
 VALIDATION_SIZE = 0.10
 RANDOM_SEED = 42
 CATEGORICAL_MISMATCH_COST = 100
-BASELINE_P_CUT = 0   # P = {training interpretations w : delta(w) >= BASELINE_P_CUT}
 OCF_SHIFT = len(FEATURES) * CATEGORICAL_MISMATCH_COST
 METRICS = ["accuracy", "precision", "recall", "f1", "mcc", "jaccard", "youden", "roc_auc"]
 
@@ -90,92 +92,135 @@ def ocf_scores(query_x, reference_x, reference_y):
 
 
 class Baseline:
-    """Baseline of Section 2, learned on the training data in two steps.
+    """Learn a disjunction of conjunctive attribute-value terms.
 
-    Step 1 (cumulation): over the training examples only, delta(w) = (#positive examples equal to w)
-    - (#negative examples equal to w), i.e. +1 for every positive and -1 for every negative example.
-    Step 2 (formula learning, after training): P = {training interpretations w : delta(w) >= BASELINE_P_CUT}
-    and N = {training interpretations w : delta(w) < 0}. Learn a formula F satisfied by every w in P and
-    by no w in N, as a disjunction of terms (conjunctions of at most k literals X_i = v). A term is kept
-    iff some w in P satisfies it and no w in N does. k is the smallest size for which every w in P
-    satisfies F. Classification: an unseen x is positive iff x satisfies F.
-    No threshold. The validation rows are used only by repair(): F is tested on them and changed to match.
+    Fit first aggregates duplicate interpretations with delta(w) = positive
+    count - negative count. Interpretations with delta >= 0 are positive and
+    interpretations with delta < 0 are negative.
+
+    Formula construction generates safe terms (terms covering no known
+    negative interpretation), then greedily selects terms that cover the
+    largest number of still-uncovered positive interpretations. Ties prefer
+    shorter terms. Full-feature terms ensure every separable positive can be
+    covered.
+
+    Validation repair adds validation positives and negatives to the formula
+    constraints and rebuilds the DNF using the same positive-preserving cover.
+    Thus no separable positive interpretation from fit or validation is lost,
+    and no known negative interpretation is covered. If an identical feature
+    vector has both labels, perfect separation is impossible; the conflict is
+    reported rather than hidden.
     """
 
-    def __init__(self, p_cut=BASELINE_P_CUT):
-        self.p_cut = p_cut
+    def __init__(self):
+        self.n_features = len(FEATURES)
+        self.positive_rows = set()
+        self.negative_rows = set()
+        self.terms = set()
+        self.uncovered_positives = set()
+        self.conflicting_patterns = set()
+
+    @staticmethod
+    def _term_matches(term, row):
+        cols, values = term
+        return all(row[col] == value for col, value in zip(cols, values))
+
+    def _rebuild_formula(self):
+        self.conflicting_patterns = self.positive_rows & self.negative_rows
+        positives = sorted(self.positive_rows - self.negative_rows)
+        negatives = self.negative_rows
+        if not positives:
+            self.terms = set()
+            self.uncovered_positives = set()
+            return
+
+        # Candidate term -> indices of positive interpretations it covers.
+        candidates = {}
+        for positive_index, row in enumerate(positives):
+            for size in range(1, self.n_features + 1):
+                for cols in combinations(range(self.n_features), size):
+                    values = tuple(row[col] for col in cols)
+                    term = (tuple(cols), values)
+                    if term in candidates:
+                        continue
+                    if any(self._term_matches(term, negative) for negative in negatives):
+                        continue
+                    coverage = {
+                        i for i, positive in enumerate(positives)
+                        if self._term_matches(term, positive)
+                    }
+                    if coverage:
+                        candidates[term] = coverage
+
+        uncovered = set(range(len(positives)))
+        selected = set()
+        while uncovered:
+            best_term = None
+            best_gain = 0
+            for term, coverage in candidates.items():
+                gain = len(coverage & uncovered)
+                if gain == 0:
+                    continue
+                if (gain > best_gain or
+                    (gain == best_gain and best_term is not None and
+                     (len(term[0]), term[0], tuple(map(str, term[1]))) <
+                     (len(best_term[0]), best_term[0], tuple(map(str, best_term[1]))))):
+                    best_term = term
+                    best_gain = gain
+            if best_term is None:
+                break
+            selected.add(best_term)
+            uncovered -= candidates[best_term]
+
+        self.terms = selected
+        self.uncovered_positives = {positives[i] for i in uncovered}
 
     def fit(self, x, y):
-        x = np.asarray(x, dtype=object)
+        x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
         y = np.asarray(y).astype(int)
-        self.n_features = x.shape[1]
-        # step 1: cumulate +1 / -1 on the training interpretations
         delta = {}
         for row, label in zip(x, y):
             key = tuple(row)
             delta[key] = delta.get(key, 0) + (1 if label == 1 else -1)
-        self.delta = delta
-        positives = [np.asarray(w, dtype=object) for w, d in delta.items() if d >= self.p_cut]
-        negatives = [np.asarray(w, dtype=object) for w, d in delta.items() if d < 0]
-        # step 2: learn F
-        self.subsets = [cols for size in range(1, self.n_features + 1)
-                        for cols in combinations(range(self.n_features), size)]
 
-        def terms_of(ws):
-            return {(cols, tuple(w[list(cols)])) for w in ws for cols in self.subsets}
-
-        self.terms_of = terms_of
-        self.negatives = negatives
-        self.extra = set()          # terms added by repair(); always active, whatever k is
-        self.terms = terms_of(positives) - terms_of(negatives)
-        self.k = self.n_features
-        if positives:
-            for k in range(1, self.n_features + 1):
-                self.k = k
-                if all(self.score(np.asarray(positives, dtype=object)) > 0):
-                    break
+        self.positive_rows = {row for row, value in delta.items() if value >= 0}
+        self.negative_rows = {row for row, value in delta.items() if value < 0}
+        self._rebuild_formula()
         return self
 
     def score(self, x):
-        """Number of kept terms (of size <= k) satisfied by each row; > 0 iff the row satisfies F."""
         x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
-        subsets = [cols for cols in self.subsets if len(cols) <= self.k]
-        return np.asarray([sum((cols, tuple(row[list(cols)])) in self.terms for cols in subsets)
-                           + sum((cols, tuple(row[list(cols)])) in self.extra for cols in self.subsets)
-                           for row in x], dtype=float)
+        return np.asarray([
+            sum(self._term_matches(term, tuple(row)) for term in self.terms)
+            for row in x
+        ], dtype=float)
+
+    def predict(self, x):
+        return (self.score(x) > 0).astype(int)
 
     def repair(self, x, y):
-        """Test F on labelled rows (the validation rows) and change it so that it matches them.
+        """Refine/split the DNF under all fit and validation constraints.
 
-        1. Every kept term satisfied by a negative validation row is removed (those rows join N), so no
-           negative validation row satisfies F any more.
-        2. Every positive validation row not satisfied by F gets the smallest-size terms that it satisfies
-           and no known negative satisfies (a term of that size is added, whatever k is).
-        A positive row equal to a known negative interpretation cannot be repaired (conflict).
-        Returns (#rows misclassified before repair, #rows misclassified after repair).
+        Rebuilding the formula is equivalent to specializing or splitting
+        offending disjuncts: candidate conjunctive terms are retained only
+        when they exclude every known negative. Greedy set cover then combines
+        those terms with OR to cover every separable positive interpretation.
+        Returns validation errors before and after repair.
         """
         x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
         y = np.asarray(y).astype(int)
         before = int((self.predict(x) != y).sum())
-        val_negatives = [row for row, label in zip(x, y) if label == 0]
-        self.negatives = self.negatives + val_negatives
-        bad_terms = self.terms_of(val_negatives)
-        self.terms -= bad_terms
-        self.extra -= bad_terms
-        n_terms = self.terms_of(self.negatives)
+
         for row, label in zip(x, y):
-            if label == 1 and self.score(row.reshape(1, -1))[0] == 0:
-                for size in range(1, self.n_features + 1):
-                    candidates = {(cols, tuple(row[list(cols)])) for cols in self.subsets
-                                  if len(cols) == size} - n_terms
-                    if candidates:
-                        self.extra |= candidates
-                        break
+            key = tuple(row)
+            if label == 1:
+                self.positive_rows.add(key)
+            else:
+                self.negative_rows.add(key)
+
+        self._rebuild_formula()
         after = int((self.predict(x) != y).sum())
         return before, after
-
-    def predict(self, x):
-        return (self.score(x) > 0).astype(int)
 
 
 def evaluate_dataset(dataset_number):
@@ -184,7 +229,6 @@ def evaluate_dataset(dataset_number):
     if len(test) != 432:
         raise ValueError(f"Official Monk-{dataset_number} test file must have 432 rows; got {len(test)}")
 
-    # Keep every official test row, including IDs also present in the official train file.
     train_ids = set(train["id"])
     test_ids = set(test["id"])
     overlap_ids = train_ids & test_ids
@@ -213,35 +257,21 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Baseline: formula learned on the 90% fit part, then tested on the validation rows and
-        # changed to match them (repair). Baseline_FitOnly is the same formula before the repair.
         model = Baseline().fit(x_fit, y_fit)
-        fit_only_score = model.score(x_test)
         val_acc_before = float((model.predict(x_val) == y_val).mean())
-        k_fit = model.k
         errors_before, errors_after = model.repair(x_val, y_val)
         test_score = model.score(x_test)
-        row = {"dataset": dataset_number, "repeat": repeat, "model": "Baseline_FitOnly",
-               "threshold": np.nan, "validation_youden": np.nan, "baseline_k": k_fit,
-               "validation_accuracy": val_acc_before}
-        row.update(metrics(y_test, (fit_only_score > 0).astype(int), fit_only_score))
-        run_rows.append(row)
-        row = {"dataset": dataset_number, "repeat": repeat, "model": "Baseline",
-               "threshold": np.nan, "validation_youden": np.nan, "baseline_k": k_fit,
-               "validation_accuracy": val_acc_before,
-               "validation_errors_before": errors_before, "validation_errors_after": errors_after}
+        row = {
+            "dataset": dataset_number, "repeat": repeat, "model": "Baseline",
+            "threshold": np.nan, "validation_youden": np.nan,
+            "validation_accuracy_before_repair": val_acc_before,
+            "validation_errors_before": errors_before,
+            "validation_errors_after": errors_after,
+            "uncovered_positive_patterns": len(model.uncovered_positives),
+            "conflicting_patterns": len(model.conflicting_patterns),
+        }
         row.update(metrics(y_test, (test_score > 0).astype(int), test_score))
         run_rows.append(row)
-
-    # Additional experiment: Baseline trained on all official training rows.
-    x_train = train[FEATURES].to_numpy(dtype=object)
-    y_train = train["y"].to_numpy()
-    full_model = Baseline().fit(x_train, y_train)
-    full_score = full_model.score(x_test)
-    row = {"dataset": dataset_number, "repeat": 1, "model": "Baseline_FullTrain",
-           "threshold": np.nan, "validation_youden": np.nan, "baseline_k": full_model.k}
-    row.update(metrics(y_test, (full_score > 0).astype(int), full_score))
-    run_rows.append(row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
