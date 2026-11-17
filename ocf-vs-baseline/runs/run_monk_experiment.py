@@ -4,9 +4,8 @@ Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
-OCF thresholds are selected on validation data. Baseline learns a DNF formula
-on fit data and repairs it with validation constraints while preserving all
-separable positive interpretations.
+OCF thresholds are selected on validation data. Baseline is evaluated both
+with validation-constrained formula repair and without repair (fit-only).
 """
 from itertools import combinations
 from pathlib import Path
@@ -257,6 +256,22 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
+        # Baseline without repair: fit only; validation labels are not used.
+        no_repair_model = Baseline().fit(x_fit, y_fit)
+        no_repair_val_pred = no_repair_model.predict(x_val)
+        no_repair_test_score = no_repair_model.score(x_test)
+        row = {
+            "dataset": dataset_number, "repeat": repeat, "model": "Baseline_NoRepair",
+            "threshold": np.nan, "validation_youden": np.nan,
+            "validation_accuracy": float((no_repair_val_pred == y_val).mean()),
+            "validation_errors": int((no_repair_val_pred != y_val).sum()),
+            "uncovered_positive_patterns": len(no_repair_model.uncovered_positives),
+            "conflicting_patterns": len(no_repair_model.conflicting_patterns),
+        }
+        row.update(metrics(y_test, (no_repair_test_score > 0).astype(int), no_repair_test_score))
+        run_rows.append(row)
+
+        # Repaired Baseline: same fit, then incorporate validation constraints.
         model = Baseline().fit(x_fit, y_fit)
         val_acc_before = float((model.predict(x_val) == y_val).mean())
         errors_before, errors_after = model.repair(x_val, y_val)
