@@ -4,9 +4,9 @@ Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
-OCF thresholds are selected on validation data. The Original Baseline is
-trained once on the complete training file without refinement. The Baseline
-with Hypothesis Refinement uses validation constraints to refine its formula.
+All models use the same reproducible 90/10 fit/validation splits. Original
+Baseline fits on the 90% partition without refinement; Baseline with
+Hypothesis Refinement additionally uses validation constraints to refine.
 """
 from itertools import combinations
 from pathlib import Path
@@ -91,7 +91,7 @@ def ocf_scores(query_x, reference_x, reference_y):
     return contributions.sum(axis=(1, 2)).astype(float) - OCF_SHIFT
 
 
-class BaselineWithHypothesisRefinement:
+class BaselineFormulaLearner:
     """Learn a disjunction of conjunctive attribute-value hypotheses.
 
     Fit first aggregates duplicate interpretations with delta(w) = positive
@@ -256,8 +256,23 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Baseline with Hypothesis Refinement: fit, then incorporate validation constraints.
-        model = BaselineWithHypothesisRefinement().fit(x_fit, y_fit)
+        # Original Baseline: same fit partition, but no validation refinement.
+        original_baseline = BaselineFormulaLearner().fit(x_fit, y_fit)
+        original_test_score = original_baseline.score(x_test)
+        row = {
+            "dataset": dataset_number, "repeat": repeat,
+            "model": "Original Baseline",
+            "threshold": np.nan, "validation_youden": np.nan,
+            "validation_accuracy": float((original_baseline.predict(x_val) == y_val).mean()),
+            "uncovered_positive_patterns": len(original_baseline.uncovered_positives),
+            "conflicting_patterns": len(original_baseline.conflicting_patterns),
+        }
+        row.update(metrics(y_test, (original_test_score > 0).astype(int), original_test_score))
+        run_rows.append(row)
+
+        # Baseline with Hypothesis Refinement: same fit partition, then refine
+        # using the validation partition.
+        model = BaselineFormulaLearner().fit(x_fit, y_fit)
         val_acc_before = float((model.predict(x_val) == y_val).mean())
         errors_before, errors_after = model.refine(x_val, y_val)
         test_score = model.score(x_test)
@@ -273,22 +288,6 @@ def evaluate_dataset(dataset_number):
         }
         row.update(metrics(y_test, (test_score > 0).astype(int), test_score))
         run_rows.append(row)
-
-    # Original Baseline is fitted once on all official training data.
-    # It has no validation split and performs no hypothesis refinement.
-    x_full_train = train[FEATURES].to_numpy(dtype=object)
-    y_full_train = train["y"].to_numpy()
-    original_baseline = BaselineWithHypothesisRefinement().fit(x_full_train, y_full_train)
-    original_test_score = original_baseline.score(x_test)
-    row = {
-        "dataset": dataset_number, "repeat": 0, "model": "Original Baseline",
-        "threshold": np.nan, "validation_youden": np.nan,
-        "validation_accuracy": np.nan, "validation_errors": np.nan,
-        "uncovered_positive_patterns": len(original_baseline.uncovered_positives),
-        "conflicting_patterns": len(original_baseline.conflicting_patterns),
-    }
-    row.update(metrics(y_test, (original_test_score > 0).astype(int), original_test_score))
-    run_rows.append(row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
