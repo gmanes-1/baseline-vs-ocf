@@ -71,6 +71,6 @@ Written to `ocf-vs-baseline/results/monk-experiment/`:
 - `per_run_results.csv`: detailed metrics for every model, Monk task, and repetition.
 - `summary_results.csv`: combined summary for all three Monk tasks.
 - `benchmark_overlap.csv`: official train/test row counts and overlap diagnostics.
-- For each Monk task, three PNG plots: `monk_N_classification_metrics.png` (accuracy, precision, recall, and F1), `monk_N_mcc_roc_auc.png` (MCC and ROC AUC), and `monk_N_confusion_matrices.png` (summed confusion matrices for all 12 models across the 10 repetitions).
+- For each Monk task, four PNG plots: `monk_N_classification_metrics.png` (accuracy, precision, recall, and F1), `monk_N_mcc_roc_auc.png` (MCC and ROC AUC), `monk_N_confusion_matrices.png` (summed confusion matrices for all 12 models across the 10 repetitions), and `monk_N_spider_plot.png` (one radar chart comparing all 12 models across eight metrics). In the spider plot, MCC and Youden J are mapped from [-1, 1] to [0, 1] so all spokes share a common radial scale; their axis labels indicate this rescaling.
 
 Metrics: accuracy, precision, recall, F1, MCC, positive-class Jaccard, Youden's J, and ROC AUC. ROC AUC uses `-OCF` for OCF and the number of satisfied DNF terms for Baseline.
