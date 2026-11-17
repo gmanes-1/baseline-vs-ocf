@@ -1,10 +1,11 @@
-"""Reproducible OCF vs baseline evaluation on official Monk files.
+"""Reproducible comparison of OCF, Baselines, and supplementary classifiers on Monk files.
 
 Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
-All models use the same reproducible 90/10 fit/validation splits. Original
+All models use the same reproducible 90/10 fit/validation splits. Categorical
+supplementary models are one-hot encoded. Original
 Baseline fits on the 90% partition without refinement; Baseline with
 Hypothesis Refinement additionally uses validation constraints to refine.
 """
@@ -14,6 +15,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.dummy import DummyClassifier
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     matthews_corrcoef, roc_auc_score, confusion_matrix,
@@ -222,6 +233,25 @@ class BaselineFormulaLearner:
         return before, after
 
 
+def build_supplementary_models():
+    """Create fresh categorical-feature pipelines for each Monk repetition."""
+    estimators = {
+        "Logistic Regression": LogisticRegression(max_iter=5000, random_state=RANDOM_SEED),
+        "SVM": SVC(probability=True, random_state=RANDOM_SEED),
+        "Decision Tree": DecisionTreeClassifier(random_state=RANDOM_SEED),
+        "Random Forest": RandomForestClassifier(random_state=RANDOM_SEED),
+        "Gradient Boosting": GradientBoostingClassifier(random_state=RANDOM_SEED),
+        "Neural Network": MLPClassifier(max_iter=2000, random_state=RANDOM_SEED),
+        "KNN": KNeighborsClassifier(),
+        "Naive Bayes": GaussianNB(),
+        "Majority Classifier": DummyClassifier(strategy="most_frequent"),
+    }
+    return {
+        name: make_pipeline(OneHotEncoder(handle_unknown="ignore"), estimator)
+        for name, estimator in estimators.items()
+    }
+
+
 def evaluate_dataset(dataset_number):
     train = load_official_file(DATA / f"monks-{dataset_number}.train")
     test = load_official_file(DATA / f"monks-{dataset_number}.test")
@@ -246,6 +276,25 @@ def evaluate_dataset(dataset_number):
         y_fit = fit["y"].to_numpy()
         x_val = val[FEATURES].to_numpy(dtype=object)
         y_val = val["y"].to_numpy()
+
+        # Run all nine supplementary classifiers on the same Monk split.
+        # One-hot encoding is required because Monk attributes are categorical.
+        for model_name, classifier in build_supplementary_models().items():
+            classifier.fit(x_fit, y_fit)
+            model_pred = classifier.predict(x_test)
+            if hasattr(classifier, "predict_proba"):
+                model_score = classifier.predict_proba(x_test)[:, 1]
+            elif hasattr(classifier, "decision_function"):
+                model_score = classifier.decision_function(x_test)
+            else:
+                model_score = model_pred.astype(float)
+            row = {
+                "dataset": dataset_number, "repeat": repeat,
+                "model": model_name, "threshold": np.nan,
+                "validation_youden": np.nan,
+            }
+            row.update(metrics(y_test, model_pred, model_score))
+            run_rows.append(row)
 
         val_ocf = ocf_scores(x_val, x_fit, y_fit)
         test_ocf = ocf_scores(x_test, x_fit, y_fit)
@@ -318,9 +367,18 @@ def main():
         for count in ("tp", "tn", "fp", "fn"):
             result[f"total_{count}"] = int(group[count].sum())
         summary_rows.append(result)
-    pd.DataFrame(summary_rows).to_csv(OUTPUT / "summary_results.csv", index=False)
+    summary_frame = pd.DataFrame(summary_rows)
+    summary_frame.to_csv(OUTPUT / "summary_results.csv", index=False)
+
+    # Three separate, easy-to-compare tables: one for each Monk problem.
+    for number in (1, 2, 3):
+        monk_table = summary_frame[summary_frame["dataset"] == number].drop(
+            columns=["dataset"]
+        ).sort_values("model")
+        monk_table.to_csv(OUTPUT / f"monk_{number}_results.csv", index=False)
+
     pd.DataFrame(dataset_info).to_csv(OUTPUT / "benchmark_overlap.csv", index=False)
-    print(f"Saved results in {OUTPUT}")
+    print(f"Saved combined results and one summary table per Monk dataset in {OUTPUT}")
 
 
 if __name__ == "__main__":
