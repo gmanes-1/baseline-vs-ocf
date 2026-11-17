@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder
@@ -345,6 +346,82 @@ def evaluate_dataset(dataset_number):
     }
 
 
+
+def create_plots(summary_frame, run_frame):
+    """Save per-Monk comparison charts and aggregated confusion matrices."""
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    model_order = [
+        "OCF", "Original Baseline", "Baseline with Hypothesis Refinement",
+        "Logistic Regression", "SVM", "Decision Tree", "Random Forest",
+        "Gradient Boosting", "Neural Network", "KNN", "Naive Bayes",
+        "Majority Classifier",
+    ]
+    display_names = {
+        "Baseline with Hypothesis Refinement": "Baseline + Refinement",
+        "Logistic Regression": "Logistic Reg.",
+        "Gradient Boosting": "Grad. Boosting",
+        "Neural Network": "Neural Network",
+        "Majority Classifier": "Majority",
+    }
+
+    for number in (1, 2, 3):
+        data = summary_frame[summary_frame["dataset"] == number].set_index("model")
+        models = [name for name in model_order if name in data.index]
+        labels = [display_names.get(name, name) for name in models]
+        x = np.arange(len(models))
+
+        # Core classification metrics.
+        fig, ax = plt.subplots(figsize=(15, 6))
+        width = 0.19
+        for offset, metric in enumerate(("mean_accuracy", "mean_precision", "mean_recall", "mean_f1")):
+            ax.bar(x + (offset - 1.5) * width, [data.loc[m, metric] for m in models],
+                   width, label=metric.replace("mean_", "").title())
+        ax.set(title=f"Monk-{number}: classification metrics", ylabel="Score",
+               ylim=(0, 1.05), xticks=x, xticklabels=labels)
+        ax.tick_params(axis="x", labelrotation=35)
+        ax.legend(ncol=4)
+        fig.tight_layout()
+        fig.savefig(OUTPUT / f"monk_{number}_classification_metrics.png", dpi=180)
+        plt.close(fig)
+
+        # MCC and ROC AUC are shown separately from thresholded metrics.
+        fig, ax = plt.subplots(figsize=(15, 6))
+        width = 0.36
+        ax.bar(x - width / 2, [data.loc[m, "mean_mcc"] for m in models],
+               width, label="MCC")
+        ax.bar(x + width / 2, [data.loc[m, "mean_roc_auc"] for m in models],
+               width, label="ROC AUC")
+        ax.axhline(0, linewidth=0.8)
+        ax.set(title=f"Monk-{number}: MCC and ROC AUC", ylabel="Score",
+               ylim=(-1.05, 1.05), xticks=x, xticklabels=labels)
+        ax.tick_params(axis="x", labelrotation=35)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(OUTPUT / f"monk_{number}_mcc_roc_auc.png", dpi=180)
+        plt.close(fig)
+
+        # Summed confusion counts across the 10 repetitions, one panel per model.
+        fig, axes = plt.subplots(3, 4, figsize=(14, 10))
+        for ax, model in zip(axes.flat, models):
+            row = data.loc[model]
+            matrix = np.array([[row["total_tn"], row["total_fp"]],
+                               [row["total_fn"], row["total_tp"]]], dtype=int)
+            image = ax.imshow(matrix)
+            ax.set_title(display_names.get(model, model), fontsize=9)
+            ax.set_xticks([0, 1], labels=["Pred 0", "Pred 1"])
+            ax.set_yticks([0, 1], labels=["True 0", "True 1"])
+            threshold = matrix.max() / 2 if matrix.max() else 0
+            for (i, j), value in np.ndenumerate(matrix):
+                ax.text(j, i, f"{value:,}", ha="center", va="center",
+                        color="white" if value > threshold else "black", fontsize=9)
+        for ax in axes.flat[len(models):]:
+            ax.axis("off")
+        fig.suptitle(f"Monk-{number}: aggregated confusion matrices (10 repeats)")
+        fig.tight_layout()
+        fig.savefig(OUTPUT / f"monk_{number}_confusion_matrices.png", dpi=180)
+        plt.close(fig)
+
+
 def main():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     all_runs, dataset_info = [], []
@@ -378,7 +455,8 @@ def main():
         monk_table.to_csv(OUTPUT / f"monk_{number}_results.csv", index=False)
 
     pd.DataFrame(dataset_info).to_csv(OUTPUT / "benchmark_overlap.csv", index=False)
-    print(f"Saved combined results and one summary table per Monk dataset in {OUTPUT}")
+    create_plots(summary_frame, run_frame)
+    print(f"Saved CSV tables and comparison plots for all three Monk datasets in {OUTPUT}")
 
 
 if __name__ == "__main__":
