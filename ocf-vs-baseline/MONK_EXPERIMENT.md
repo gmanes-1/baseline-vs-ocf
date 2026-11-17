@@ -22,6 +22,17 @@ Requires Python, NumPy, pandas, and scikit-learn.
 
 ## Models
 
+The same 10 stratified 90/10 repetitions are used to test all models on each
+Monk task. The nine supplementary classifiers are Logistic Regression, SVM,
+Decision Tree, Random Forest, Gradient Boosting, Neural Network, KNN, Naive
+Bayes, and Majority Classifier. Since Monk attributes are categorical, these
+classifiers are evaluated through a one-hot-encoding pipeline. Each classifier
+is freshly instantiated for every repetition.
+
+The comparison also includes OCF, Original Baseline, and Baseline with
+Hypothesis Refinement. The Majority Classifier is only an additional reference
+model; it does not replace either Baseline variant.
+
 - **OCF:** uses the categorical scaled-distance calculation in `datadistances.py`: a matching category costs 0, a mismatch costs 100; a positive reference example contributes that distance and a negative reference contributes 100 minus that distance. The OCF shift is 600 for six categorical features. Lower OCF is the positive direction.
 - **Both Baseline variants:** first cumulate duplicate training interpretations: `delta(w)` = number of positive rows equal to `w` minus number of negative rows equal to `w`. Interpretations with `delta >= 0` form the positive set P; interpretations with `delta < 0` form the negative set N. The classifier is a disjunction (OR) of conjunctive terms, where each condition is an attribute-value equality such as `X_2 = 1`.
 
@@ -56,8 +67,9 @@ The official Monk files contain overlap between training and test IDs. This expe
 
 Written to `ocf-vs-baseline/results/monk-experiment/`:
 
-- `per_run_results.csv`: one row per model, Monk task, and repetition, including OCF's validation-selected threshold, Original Baseline and Hypothesis Refinement diagnostics, and official-test metrics.
-- `summary_results.csv`: mean and sample standard deviation of each metric across the 10 repetitions, plus summed confusion counts.
+- `monk_1_results.csv`, `monk_2_results.csv`, and `monk_3_results.csv`: three separate summary tables, one per Monk task, with each model's mean and sample standard deviation across 10 repetitions and summed confusion counts.
+- `per_run_results.csv`: detailed metrics for every model, Monk task, and repetition.
+- `summary_results.csv`: combined summary for all three Monk tasks.
 - `benchmark_overlap.csv`: official train/test row counts and overlap diagnostics.
 
 Metrics: accuracy, precision, recall, F1, MCC, positive-class Jaccard, Youden's J, and ROC AUC. ROC AUC uses `-OCF` for OCF and the number of satisfied DNF terms for Baseline.
