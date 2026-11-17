@@ -256,21 +256,6 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Baseline without repair: fit only; validation labels are not used.
-        no_repair_model = Baseline().fit(x_fit, y_fit)
-        no_repair_val_pred = no_repair_model.predict(x_val)
-        no_repair_test_score = no_repair_model.score(x_test)
-        row = {
-            "dataset": dataset_number, "repeat": repeat, "model": "Baseline_NoRepair",
-            "threshold": np.nan, "validation_youden": np.nan,
-            "validation_accuracy": float((no_repair_val_pred == y_val).mean()),
-            "validation_errors": int((no_repair_val_pred != y_val).sum()),
-            "uncovered_positive_patterns": len(no_repair_model.uncovered_positives),
-            "conflicting_patterns": len(no_repair_model.conflicting_patterns),
-        }
-        row.update(metrics(y_test, (no_repair_test_score > 0).astype(int), no_repair_test_score))
-        run_rows.append(row)
-
         # Repaired Baseline: same fit, then incorporate validation constraints.
         model = Baseline().fit(x_fit, y_fit)
         val_acc_before = float((model.predict(x_val) == y_val).mean())
@@ -287,6 +272,22 @@ def evaluate_dataset(dataset_number):
         }
         row.update(metrics(y_test, (test_score > 0).astype(int), test_score))
         run_rows.append(row)
+
+    # Fit-only Baseline uses the complete official training set once.
+    # There is no validation split and no repair for this variant.
+    x_full_train = train[FEATURES].to_numpy(dtype=object)
+    y_full_train = train["y"].to_numpy()
+    no_repair_model = Baseline().fit(x_full_train, y_full_train)
+    no_repair_test_score = no_repair_model.score(x_test)
+    row = {
+        "dataset": dataset_number, "repeat": 0, "model": "Baseline_NoRepair",
+        "threshold": np.nan, "validation_youden": np.nan,
+        "validation_accuracy": np.nan, "validation_errors": np.nan,
+        "uncovered_positive_patterns": len(no_repair_model.uncovered_positives),
+        "conflicting_patterns": len(no_repair_model.conflicting_patterns),
+    }
+    row.update(metrics(y_test, (no_repair_test_score > 0).astype(int), no_repair_test_score))
+    run_rows.append(row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
