@@ -15,9 +15,9 @@ Requires Python, NumPy, pandas, and scikit-learn.
 - Reads the official `monks-1/2/3.train` and `.test` files in `ocf-vs-baseline/datasets/`.
 - **Preserves every official test row unchanged (432 rows per Monk task).** The test files are never filtered or rewritten.
 - The official training file is split into 10 reproducible, stratified 90% fit / 10% validation partitions (random seed 42).
-- The same fit/validation partition is used for OCF and the Baseline with Hypothesis Refinement in each repetition.
+- The same fit/validation partition is used for OCF, Original Baseline, and Baseline with Hypothesis Refinement in each repetition.
 - OCF is trained on the 90% fit partition and its threshold is selected by maximising Youden's J on the 10% validation partition. The chosen threshold is then applied to all 432 official test rows.
-- The Baseline is evaluated in two variants. **Original Baseline** is fitted once on the complete official training set, without any split or hypothesis refinement. **Baseline with Hypothesis Refinement** uses the 90% fit partition and incorporates validation labels through the hypothesis refinement method. OCF remains unchanged.
+- The Baseline is evaluated in two variants on the same 10 splits. **Original Baseline** is fitted on each 90% fit partition and does not use validation labels or call `refine()`. **Baseline with Hypothesis Refinement** starts from the same 90% fit partition and additionally incorporates the 10% validation labels through `refine()`. This makes the comparison isolate the effect of hypothesis refinement. OCF remains unchanged.
 - No test labels are used for fitting, threshold selection, formula repair, or model selection.
 
 ## Models
@@ -44,7 +44,7 @@ After refinement, the script reports validation errors before and after refineme
 
 ### Original Baseline
 
-**Original Baseline** is fitted once on **100% of the official training file**. It uses the same DNF construction and greedy safe-term cover, but **does not split the training data, call the hypothesis refinement method, or use validation labels**. Its formula is applied unchanged to the official test file. It therefore produces one result per Monk dataset, rather than 10 repeated split results. OCF and **Baseline with Hypothesis Refinement** continue to use the 10 fit/validation splits.
+**Original Baseline** is fitted separately on each of the 10 reproducible 90% fit partitions. It uses the same initial DNF construction and greedy safe-term cover, but **does not call `refine()` and does not use validation labels**. Its formula is applied unchanged to the official test file. The **Baseline with Hypothesis Refinement** starts from the same fit partition, then calls `refine()` using the corresponding 10% validation partition. Therefore, both variants are evaluated on matched splits, and their difference isolates the effect of refinement.
 
 The greedy set-cover step is a heuristic: it produces a valid cover when one exists in the candidate language, but it does not guarantee the globally smallest DNF. Candidate generation enumerates attribute subsets, so its worst-case dependence on the number of attributes is exponential; the Monk experiments use six attributes.
 
@@ -56,7 +56,7 @@ The official Monk files contain overlap between training and test IDs. This expe
 
 Written to `ocf-vs-baseline/results/monk-experiment/`:
 
-- `per_run_results.csv`: one row per model, Monk task, and repetition, including OCF's validation-selected threshold, Original Baseline diagnostics, Hypothesis Refinement diagnostics, and official-test metrics.
+- `per_run_results.csv`: one row per model, Monk task, and repetition, including OCF's validation-selected threshold, Original Baseline and Hypothesis Refinement diagnostics, and official-test metrics.
 - `summary_results.csv`: mean and sample standard deviation of each metric across the 10 repetitions, plus summed confusion counts.
 - `benchmark_overlap.csv`: official train/test row counts and overlap diagnostics.
 
