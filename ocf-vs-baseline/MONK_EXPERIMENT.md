@@ -17,7 +17,7 @@ Requires Python, NumPy, pandas, and scikit-learn.
 - The official training file is split into 10 reproducible, stratified 90% fit / 10% validation partitions (random seed 42).
 - The same fit/validation partition is used for OCF and Baseline in each repetition.
 - OCF is trained on the 90% fit partition and its threshold is selected by maximising Youden's J on the 10% validation partition. The chosen threshold is then applied to all 432 official test rows.
-- Baseline learns a DNF formula on the 90% fit partition. It is evaluated in two variants: `Baseline_NoRepair` uses the fit-only formula unchanged, while `Baseline` incorporates validation labels through constrained formula repair. OCF remains unchanged.
+- Baseline learns a DNF formula on the 90% fit partition. It is evaluated in two variants: `Baseline_NoRepair` is fitted once on the complete official training set, without any split or repair. `Baseline` uses the 90% fit partition and incorporates validation labels through constrained formula repair. OCF remains unchanged.
 - No test labels are used for fitting, threshold selection, formula repair, or model selection.
 
 ## Models
@@ -44,7 +44,7 @@ After repair, the script reports validation errors before and after repair, plus
 
 ### Baseline without repair
 
-`Baseline_NoRepair` is fitted only on the 90% fit partition. It uses the same DNF construction and greedy safe-term cover, but **does not call formula repair and does not incorporate validation labels**. The validation partition is used only to report a diagnostic accuracy/error count; the learned formula is applied unchanged to the official test file. This provides a direct comparison between fit-only Baseline and validation-repaired Baseline under the same split.
+`Baseline_NoRepair` is fitted once on **100% of the official training file**. It uses the same DNF construction and greedy safe-term cover, but **does not split the training data, call formula repair, or use validation labels**. Its formula is applied unchanged to the official test file. It therefore produces one result per Monk dataset, rather than 10 repeated split results. OCF and the repaired Baseline continue to use the 10 fit/validation splits.
 
 The greedy set-cover step is a heuristic: it produces a valid cover when one exists in the candidate language, but it does not guarantee the globally smallest DNF. Candidate generation enumerates attribute subsets, so its worst-case dependence on the number of attributes is exponential; the Monk experiments use six attributes.
 
@@ -56,7 +56,7 @@ The official Monk files contain overlap between training and test IDs. This expe
 
 Written to `ocf-vs-baseline/results/monk-experiment/`:
 
-- `per_run_results.csv`: one row per model, Monk task, and repetition, including OCF's validation-selected threshold, fit-only Baseline validation diagnostics, repaired Baseline repair diagnostics, and official-test metrics.
+- `per_run_results.csv`: one row per model, Monk task, and repetition, including OCF's validation-selected threshold, full-training Baseline diagnostics, repaired Baseline repair diagnostics, and official-test metrics.
 - `summary_results.csv`: mean and sample standard deviation of each metric across the 10 repetitions, plus summed confusion counts.
 - `benchmark_overlap.csv`: official train/test row counts and overlap diagnostics.
 
