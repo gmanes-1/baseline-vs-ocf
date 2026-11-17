@@ -1,4 +1,4 @@
-"""Reproducible OCF vs Prade-inspired exact-baseline evaluation on official Monk files.
+"""Reproducible OCF vs Baseline evaluation on official Monk files.
 
 Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
@@ -6,6 +6,7 @@ Run from the repository root:
 The official 432-row .test files are used unchanged for every repetition.
 Thresholds are selected only on validation data carved from .train.
 """
+from itertools import combinations
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -23,6 +24,7 @@ N_REPEATS = 10
 VALIDATION_SIZE = 0.10
 RANDOM_SEED = 42
 CATEGORICAL_MISMATCH_COST = 100
+BASELINE_P_CUT = 0   # P = {training interpretations w : delta(w) >= BASELINE_P_CUT}
 OCF_SHIFT = len(FEATURES) * CATEGORICAL_MISMATCH_COST
 METRICS = ["accuracy", "precision", "recall", "f1", "mcc", "jaccard", "youden", "roc_auc"]
 
@@ -87,18 +89,93 @@ def ocf_scores(query_x, reference_x, reference_y):
     return contributions.sum(axis=(1, 2)).astype(float) - OCF_SHIFT
 
 
-class ExactDeltaBaseline:
-    """Prade-inspired cumulative delta using each complete feature tuple as one piece."""
+class Baseline:
+    """Baseline of Section 2, learned on the training data in two steps.
+
+    Step 1 (cumulation): over the training examples only, delta(w) = (#positive examples equal to w)
+    - (#negative examples equal to w), i.e. +1 for every positive and -1 for every negative example.
+    Step 2 (formula learning, after training): P = {training interpretations w : delta(w) >= BASELINE_P_CUT}
+    and N = {training interpretations w : delta(w) < 0}. Learn a formula F satisfied by every w in P and
+    by no w in N, as a disjunction of terms (conjunctions of at most k literals X_i = v). A term is kept
+    iff some w in P satisfies it and no w in N does. k is the smallest size for which every w in P
+    satisfies F. Classification: an unseen x is positive iff x satisfies F.
+    No threshold. The validation rows are used only by repair(): F is tested on them and changed to match.
+    """
+
+    def __init__(self, p_cut=BASELINE_P_CUT):
+        self.p_cut = p_cut
+
     def fit(self, x, y):
-        self.delta = {}
+        x = np.asarray(x, dtype=object)
+        y = np.asarray(y).astype(int)
+        self.n_features = x.shape[1]
+        # step 1: cumulate +1 / -1 on the training interpretations
+        delta = {}
         for row, label in zip(x, y):
             key = tuple(row)
-            increment = 1 if int(label) == 1 else -1
-            self.delta[key] = self.delta.get(key, 0) + increment
+            delta[key] = delta.get(key, 0) + (1 if label == 1 else -1)
+        self.delta = delta
+        positives = [np.asarray(w, dtype=object) for w, d in delta.items() if d >= self.p_cut]
+        negatives = [np.asarray(w, dtype=object) for w, d in delta.items() if d < 0]
+        # step 2: learn F
+        self.subsets = [cols for size in range(1, self.n_features + 1)
+                        for cols in combinations(range(self.n_features), size)]
+
+        def terms_of(ws):
+            return {(cols, tuple(w[list(cols)])) for w in ws for cols in self.subsets}
+
+        self.terms_of = terms_of
+        self.negatives = negatives
+        self.extra = set()          # terms added by repair(); always active, whatever k is
+        self.terms = terms_of(positives) - terms_of(negatives)
+        self.k = self.n_features
+        if positives:
+            for k in range(1, self.n_features + 1):
+                self.k = k
+                if all(self.score(np.asarray(positives, dtype=object)) > 0):
+                    break
         return self
 
     def score(self, x):
-        return np.asarray([self.delta.get(tuple(row), 0) for row in x], dtype=float)
+        """Number of kept terms (of size <= k) satisfied by each row; > 0 iff the row satisfies F."""
+        x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
+        subsets = [cols for cols in self.subsets if len(cols) <= self.k]
+        return np.asarray([sum((cols, tuple(row[list(cols)])) in self.terms for cols in subsets)
+                           + sum((cols, tuple(row[list(cols)])) in self.extra for cols in self.subsets)
+                           for row in x], dtype=float)
+
+    def repair(self, x, y):
+        """Test F on labelled rows (the validation rows) and change it so that it matches them.
+
+        1. Every kept term satisfied by a negative validation row is removed (those rows join N), so no
+           negative validation row satisfies F any more.
+        2. Every positive validation row not satisfied by F gets the smallest-size terms that it satisfies
+           and no known negative satisfies (a term of that size is added, whatever k is).
+        A positive row equal to a known negative interpretation cannot be repaired (conflict).
+        Returns (#rows misclassified before repair, #rows misclassified after repair).
+        """
+        x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
+        y = np.asarray(y).astype(int)
+        before = int((self.predict(x) != y).sum())
+        val_negatives = [row for row, label in zip(x, y) if label == 0]
+        self.negatives = self.negatives + val_negatives
+        bad_terms = self.terms_of(val_negatives)
+        self.terms -= bad_terms
+        self.extra -= bad_terms
+        n_terms = self.terms_of(self.negatives)
+        for row, label in zip(x, y):
+            if label == 1 and self.score(row.reshape(1, -1))[0] == 0:
+                for size in range(1, self.n_features + 1):
+                    candidates = {(cols, tuple(row[list(cols)])) for cols in self.subsets
+                                  if len(cols) == size} - n_terms
+                    if candidates:
+                        self.extra |= candidates
+                        break
+        after = int((self.predict(x) != y).sum())
+        return before, after
+
+    def predict(self, x):
+        return (self.score(x) > 0).astype(int)
 
 
 def evaluate_dataset(dataset_number):
@@ -136,33 +213,34 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Prade-inspired positive l-cut: predict positive iff delta >= l.
-        model = ExactDeltaBaseline().fit(x_fit, y_fit)
-        val_delta = model.score(x_val)
-        test_delta = model.score(x_test)
-        threshold, val_j = choose_threshold(y_val, val_delta, "ge")
-        pred = predict(test_delta, threshold, "ge")
-        row = {"dataset": dataset_number, "repeat": repeat, "model": "BaselineExact_Validation",
-               "threshold": threshold, "validation_youden": val_j}
-        row.update(metrics(y_test, pred, test_delta))
+        # Baseline: formula learned on the 90% fit part, then tested on the validation rows and
+        # changed to match them (repair). Baseline_FitOnly is the same formula before the repair.
+        model = Baseline().fit(x_fit, y_fit)
+        fit_only_score = model.score(x_test)
+        val_acc_before = float((model.predict(x_val) == y_val).mean())
+        k_fit = model.k
+        errors_before, errors_after = model.repair(x_val, y_val)
+        test_score = model.score(x_test)
+        row = {"dataset": dataset_number, "repeat": repeat, "model": "Baseline_FitOnly",
+               "threshold": np.nan, "validation_youden": np.nan, "baseline_k": k_fit,
+               "validation_accuracy": val_acc_before}
+        row.update(metrics(y_test, (fit_only_score > 0).astype(int), fit_only_score))
+        run_rows.append(row)
+        row = {"dataset": dataset_number, "repeat": repeat, "model": "Baseline",
+               "threshold": np.nan, "validation_youden": np.nan, "baseline_k": k_fit,
+               "validation_accuracy": val_acc_before,
+               "validation_errors_before": errors_before, "validation_errors_after": errors_after}
+        row.update(metrics(y_test, (test_score > 0).astype(int), test_score))
         run_rows.append(row)
 
-    # Additional experiment: BaselineExact trained on all official training rows.
-    # Its positive l-cut is fixed at zero in advance, so no validation is used.
+    # Additional experiment: Baseline trained on all official training rows.
     x_train = train[FEATURES].to_numpy(dtype=object)
     y_train = train["y"].to_numpy()
-    full_train_model = ExactDeltaBaseline().fit(x_train, y_train)
-    full_train_test_delta = full_train_model.score(x_test)
-    fixed_threshold = 0.0
-    full_train_pred = predict(full_train_test_delta, fixed_threshold, "ge")
-    row = {
-        "dataset": dataset_number,
-        "repeat": 1,
-        "model": "BaselineExact_NoValidation",
-        "threshold": fixed_threshold,
-        "validation_youden": np.nan,
-    }
-    row.update(metrics(y_test, full_train_pred, full_train_test_delta))
+    full_model = Baseline().fit(x_train, y_train)
+    full_score = full_model.score(x_test)
+    row = {"dataset": dataset_number, "repeat": 1, "model": "Baseline_FullTrain",
+           "threshold": np.nan, "validation_youden": np.nan, "baseline_k": full_model.k}
+    row.update(metrics(y_test, (full_score > 0).astype(int), full_score))
     run_rows.append(row)
 
     return run_rows, {
