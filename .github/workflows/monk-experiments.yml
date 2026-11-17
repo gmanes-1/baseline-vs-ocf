@@ -1,0 +1,41 @@
+name: Monk benchmark experiment
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ocf-vs-baseline/runs/run_monk_experiment.py"
+      - "ocf-vs-baseline/datasets/monks-*"
+      - ".github/workflows/monk-experiments.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  monk-experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ocf-vs-baseline/requirements.txt
+
+      - name: Install experiment dependencies
+        run: python -m pip install --upgrade pip numpy pandas scikit-learn
+
+      - name: Run all Monk experiments
+        run: python ocf-vs-baseline/runs/run_monk_experiment.py
+
+      - name: Upload Monk result CSVs
+        uses: actions/upload-artifact@v4
+        with:
+          name: monk-experiment-results
+          path: ocf-vs-baseline/results/monk-experiment/*.csv
+          if-no-files-found: error
+          retention-days: 30
