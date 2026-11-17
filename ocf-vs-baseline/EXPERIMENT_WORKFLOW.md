@@ -74,7 +74,7 @@ stage. If samplings already exist, pass `--skip-sampling`. To run only Monk
 and the plotter (which will still need complete UCI results for its plots):
 
 ```bash
-python runs/run_all_experiments.py --skip-sampling --skip-existing-models --skip-ocf
+python runs/run_all_experiments.py --skip-sampling --skip-existing-models --skip-ocf --skip-plots
 ```
 
 Use `--skip-monk` to omit Monk, `--skip-plots` to omit plotting, and
