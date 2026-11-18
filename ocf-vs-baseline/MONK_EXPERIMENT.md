@@ -42,7 +42,7 @@ The three tasks use different target concepts. In the conventional description o
 
 - **MONK-1:** positive when the head shape equals the body shape, or the jacket colour is red.
 - **MONK-2:** positive when exactly two of the six attributes take their first value.
-- **MONK-3:** positive when the body shape is not octagonal or the jacket colour is not blue, or when the robot is holding a sword and the jacket colour is green. This task includes label noise in the standard benchmark.
+- **MONK-3:** positive when `NOT (body-shape = octagon OR jacket-colour = blue) OR (holding = sword AND jacket-colour = green)`. This task includes label noise in the standard benchmark.
 
 The exact encodings of attribute values are those in the supplied UCI files; the experiment does not recode the feature values into semantic labels such as “red” or “round”.
 
