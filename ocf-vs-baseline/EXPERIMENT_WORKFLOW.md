@@ -57,7 +57,7 @@ The Monk runner uses the official `monks-1/2/3.train` and `.test` files
 bundled under `datasets/`. Run it with:
 
 ```bash
-python runs/run_monk_experiment.py
+python ocf-vs-baseline/runs/run_monk_experiment.py
 ```
 
 The comparison includes OCF, Original Baseline, and Baseline with Hypothesis
