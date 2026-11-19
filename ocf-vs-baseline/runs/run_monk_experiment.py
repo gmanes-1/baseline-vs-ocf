@@ -311,7 +311,7 @@ def create_plots(summary_frame, run_frame):
     """Save per-Monk comparison charts and aggregated confusion matrices."""
     OUTPUT.mkdir(parents=True, exist_ok=True)
     model_order = [
-        "OCF", "Baseline,
+        "OCF", "Baseline",
         "Logistic Regression", "SVM", "Decision Tree", "Random Forest",
         "Gradient Boosting", "Neural Network", "KNN", "Naive Bayes",
         "Majority Classifier",
