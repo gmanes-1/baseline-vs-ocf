@@ -5,9 +5,8 @@ Run from the repository root:
 
 The official 432-row .test files are used unchanged for every repetition.
 All models use the same reproducible 90/10 fit/validation splits. Categorical
-supplementary models are one-hot encoded. Original
-Baseline fits on the 90% partition without refinement; Baseline with
-Hypothesis Refinement additionally uses validation constraints to refine.
+supplementary models are one-hot encoded. The symbolic Baseline is fitted
+only on the 90% fit partition; validation labels are not used to refine it.
 """
 from itertools import combinations
 from pathlib import Path
@@ -116,10 +115,7 @@ class BaselineFormulaLearner:
     shorter terms. Full-feature terms ensure every separable positive can be
     covered.
 
-    Hypothesis refinement adds validation positives and negatives to the
-    formula constraints and rebuilds the DNF using the same positive-preserving
-    cover. Thus no separable positive interpretation from fit or validation is
-    lost, and no known negative interpretation is covered. If an identical
+    The formula is learned from the fitting partition only. If an identical
     feature vector has both labels, perfect separation is impossible; the
     conflict is reported rather than hidden.
     """
@@ -209,29 +205,6 @@ class BaselineFormulaLearner:
     def predict(self, x):
         return (self.score(x) > 0).astype(int)
 
-    def refine(self, x, y):
-        """Refine the DNF using fit and validation constraints.
-
-        Rebuilding the formula is equivalent to specializing or splitting
-        offending disjuncts: candidate conjunctive terms are retained only
-        when they exclude every known negative. Greedy set cover then combines
-        those terms with OR to cover every separable positive interpretation.
-        Returns validation errors before and after refinement.
-        """
-        x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
-        y = np.asarray(y).astype(int)
-        before = int((self.predict(x) != y).sum())
-
-        for row, label in zip(x, y):
-            key = tuple(row)
-            if label == 1:
-                self.positive_rows.add(key)
-            else:
-                self.negative_rows.add(key)
-
-        self._rebuild_formula()
-        after = int((self.predict(x) != y).sum())
-        return before, after
 
 
 def build_supplementary_models():
@@ -320,24 +293,6 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, (original_test_score > 0).astype(int), original_test_score))
         run_rows.append(row)
 
-        # Baseline with Hypothesis Refinement: same fit partition, then refine
-        # using the validation partition.
-        model = BaselineFormulaLearner().fit(x_fit, y_fit)
-        val_acc_before = float((model.predict(x_val) == y_val).mean())
-        errors_before, errors_after = model.refine(x_val, y_val)
-        test_score = model.score(x_test)
-        row = {
-            "dataset": dataset_number, "repeat": repeat,
-            "model": "Baseline with Hypothesis Refinement",
-            "threshold": np.nan, "validation_youden": np.nan,
-            "validation_accuracy_before_refinement": val_acc_before,
-            "validation_errors_before_refinement": errors_before,
-            "validation_errors_after_refinement": errors_after,
-            "uncovered_positive_patterns": len(model.uncovered_positives),
-            "conflicting_patterns": len(model.conflicting_patterns),
-        }
-        row.update(metrics(y_test, (test_score > 0).astype(int), test_score))
-        run_rows.append(row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
@@ -351,13 +306,12 @@ def create_plots(summary_frame, run_frame):
     """Save per-Monk comparison charts and aggregated confusion matrices."""
     OUTPUT.mkdir(parents=True, exist_ok=True)
     model_order = [
-        "OCF", "Original Baseline", "Baseline with Hypothesis Refinement",
+        "OCF", "Original Baseline",
         "Logistic Regression", "SVM", "Decision Tree", "Random Forest",
         "Gradient Boosting", "Neural Network", "KNN", "Naive Bayes",
         "Majority Classifier",
     ]
     display_names = {
-        "Baseline with Hypothesis Refinement": "Baseline + Refinement",
         "Logistic Regression": "Logistic Reg.",
         "Gradient Boosting": "Grad. Boosting",
         "Neural Network": "Neural Network",
