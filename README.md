@@ -128,7 +128,7 @@ For each of MONK-1, MONK-2, and MONK-3, the runner:
 | Categorical mismatch cost | 100 |
 | OCF shift | 600 |
 
-Test labels are used only for final metrics, not fitting, refinement, or threshold selection.
+Test labels are used only for final metrics, not fitting or OCF threshold selection.
 
 ### Important limitation: official MONK test data overlap with training data
 
@@ -233,7 +233,7 @@ UCI outputs are stored in the dataset folders using the original `*-all-results.
 ## 10. Reporting recommendations
 
 1. Report the three MONK tasks separately; they have different target concepts and MONK-3 includes noise.
-2. Describe the MONK DNF Baseline as fit-only; do not imply that validation labels are used to refine its formula.
+2. Describe the MONK DNF Baseline as fit-only; validation labels are not used to modify its formula.
 3. Explain that the OCF threshold is selected on validation data.
 4. Always disclose the official train/test overlap when discussing MONK test metrics.
 5. Do not interpret the ten-run standard deviation as an independent-test confidence interval.
