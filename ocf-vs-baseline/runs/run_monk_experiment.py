@@ -288,7 +288,7 @@ def evaluate_dataset(dataset_number):
     baseline_test_score = baseline.score(x_test)
     baseline_row = {
         "dataset": dataset_number, "repeat": 1,
-        "model": "Original Baseline",
+        "model": "Baseline,
         "threshold": np.nan, "validation_youden": np.nan,
         "training_rows_used": len(train),
         "uncovered_positive_patterns": len(baseline.uncovered_positives),
@@ -311,7 +311,7 @@ def create_plots(summary_frame, run_frame):
     """Save per-Monk comparison charts and aggregated confusion matrices."""
     OUTPUT.mkdir(parents=True, exist_ok=True)
     model_order = [
-        "OCF", "Original Baseline",
+        "OCF", "Baseline,
         "Logistic Regression", "SVM", "Decision Tree", "Random Forest",
         "Gradient Boosting", "Neural Network", "KNN", "Naive Bayes",
         "Majority Classifier",
