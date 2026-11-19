@@ -166,7 +166,6 @@ Paths are relative to the repository root.
 | `ocf-vs-baseline/datasets/monks-1.test`, `monks-2.test`, `monks-3.test` | Official 432-row test/domain files. |
 | `ocf-vs-baseline/results/monk-experiment/` | Result tables, overlap diagnostic, and figures. |
 | `ocf-vs-baseline/requirements.txt` | Python dependencies. |
-| `ocf-vs-baseline/runs/runbaseline.py` | Exact-only `BaselineExact` implementation for the broader workflow, not the MONK DNF learner. |
 | `ocf-vs-baseline/runs/run_all_experiments.py` | Orchestrator for the broader UCI stages and MONK. |
 
 ## 8. Installation and run instructions
@@ -226,7 +225,7 @@ The one-command orchestrator is:
 python ocf-vs-baseline/runs/run_all_experiments.py
 ```
 
-It runs the UCI workflow and MONK, then plotting, and stops at the first failed stage. It accepts `--skip-sampling`, `--skip-existing-models`, `--skip-ocf`, `--skip-monk`, `--skip-plots`, and `--all-plots`. Note that the broader plotter expects complete UCI results; for a MONK-only run use the dedicated MONK command above.
+It coordinates the independent UCI stages and the dedicated MONK runner, then runs the UCI plotting stage. It stops at the first failed stage. The MONK runner remains a separate script so the benchmark can be reproduced without configuring or running the optional UCI workflow. It accepts `--skip-sampling`, `--skip-existing-models`, `--skip-ocf`, `--skip-monk`, `--skip-plots`, and `--all-plots`. Note that the broader plotter expects complete UCI results; for a MONK-only run use the dedicated MONK command above.
 
 UCI outputs are stored in the dataset folders using the original `*-all-results.csv` convention; comparison figures are written under `all-results-plots/` in `KRML_DATASETS`.
 
@@ -238,7 +237,7 @@ UCI outputs are stored in the dataset folders using the original `*-all-results.
 4. Always disclose the official train/test overlap when discussing MONK test metrics.
 5. Do not interpret the ten-run standard deviation as an independent-test confidence interval.
 6. Describe the DNF learner as a greedy safe-term construction, not an exact minimum-formula solver.
-7. Keep the MONK DNF learner distinct from `BaselineExact`/`BaselineLiteral` and from the generalized possibility-distribution theory.
+7. Keep the MONK DNF learner distinct from the generalized possibility-distribution theory.
 
 ## 11. References and source repositories
 
