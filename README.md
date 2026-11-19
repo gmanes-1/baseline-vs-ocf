@@ -73,7 +73,7 @@ The files encode values categorically; the experiment uses those encoded values 
 
 ## 4. Methods in the MONK experiment
 
-The MONK runner evaluates eleven models per task: OCF, one fit-only DNF Baseline, and nine supplementary classifiers.
+The MONK runner evaluates eleven models per task: OCF, one DNF Baseline trained on the complete official training file, and nine supplementary classifiers.
 
 ### 4.1 OCF
 
@@ -99,7 +99,7 @@ This is a greedy heuristic, not a guarantee of a globally minimum DNF. The score
 
 ### 4.3 Baseline fitting protocol
 
-Only the fit-only DNF Baseline is retained in the MONK benchmark. It is trained on the 90% fitting partition and applied unchanged to the validation and official test partitions. Validation labels are not used to refine its formula.
+Only one DNF Baseline is retained in the MONK benchmark. It is fitted once on **all rows in the official training file** (100% of the training data), with no train/validation split for the Baseline, and then applied unchanged to the official test file.
 
 ### 4.4 Supplementary classifiers
 
@@ -113,17 +113,17 @@ For each of MONK-1, MONK-2, and MONK-3, the runner:
 
 1. Loads the official training and test files (eight columns: label, six features, ID).
 2. Checks that the official test file has 432 rows.
-3. Creates ten stratified fit/validation partitions from the official training file using `StratifiedShuffleSplit(n_splits=10, test_size=0.10, random_state=42)`.
-4. Uses 90% of official training rows for fitting and 10% for validation.
-5. Fits the nine supplementary classifiers on the fit rows.
-6. Computes OCF validation/test scores from the fit rows, chooses the threshold on validation, and evaluates on test.
-7. Fits the DNF Baseline on fit rows and applies it unchanged; validation rows are used only for OCF threshold selection and validation diagnostics.
-8. Saves per-repetition metrics, then computes means and sample standard deviations (ddof=1), sums confusion counts, and creates plots.
+3. Fits the DNF Baseline once on **100% of the official training rows**, with no validation split for this model, and evaluates it on the official test file.
+4. Creates ten stratified 90/10 fit/validation partitions for OCF and the nine supplementary classifiers, using `StratifiedShuffleSplit(n_splits=10, test_size=0.10, random_state=42)`.
+5. Fits the nine supplementary classifiers on each fit partition.
+6. Computes OCF validation/test scores from each fit partition, chooses the threshold on validation, and evaluates on test.
+7. Saves the single full-training Baseline result and the per-repetition OCF/supplementary-model results, then computes summaries and creates plots.
 
 | Setting | Value |
 |---|---:|
 | Repetitions | 10 |
-| Fit / validation split | 90% / 10% |
+| Baseline training data | 100% of official training file; no split |
+| OCF / supplementary-model fit-validation split | 90% / 10% |
 | Split seed | 42 |
 | Categorical mismatch cost | 100 |
 | OCF shift | 600 |
@@ -233,7 +233,7 @@ UCI outputs are stored in the dataset folders using the original `*-all-results.
 ## 10. Reporting recommendations
 
 1. Report the three MONK tasks separately; they have different target concepts and MONK-3 includes noise.
-2. Describe the MONK DNF Baseline as fit-only; validation labels are not used to modify its formula.
+2. Describe the MONK DNF Baseline as trained once on the complete official training file, without a validation split.
 3. Explain that the OCF threshold is selected on validation data.
 4. Always disclose the official train/test overlap when discussing MONK test metrics.
 5. Do not interpret the ten-run standard deviation as an independent-test confidence interval.
