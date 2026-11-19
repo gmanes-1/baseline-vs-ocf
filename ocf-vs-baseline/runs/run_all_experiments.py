@@ -1,4 +1,7 @@
-"""Run the original supplementary-model workflow and the Monk benchmark.
+"""Orchestrate the optional UCI workflow and the standalone MONK benchmark.
+
+This script coordinates stages; the actual MONK implementation lives in
+run_monk_experiment.py so it can also be executed independently.
 
 Run from any directory:
     python /path/to/ocf-vs-baseline/runs/run_all_experiments.py
