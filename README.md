@@ -13,7 +13,7 @@ The project is motivated by *Iterated Belief Change as Learning* (Schwind et al.
 The MONK experiments make the symbolic representation especially transparent: six categorical attributes define a finite domain, and each target class can be described by a Boolean formula.
 
 This repository contains two related but distinct experiment tracks:
-1. the MONK benchmark comparison, including a DNF Baseline learner and hypothesis refinement;
+1. the MONK benchmark comparison, including a fit-only DNF Baseline learner;
 2. the broader supplementary-model/OCF workflow on processed UCI datasets, ported from the original supplementary repository.
 
 The MONK runner is self-contained and does not require the broader UCI workflow.
@@ -46,7 +46,7 @@ The version space is the set of formulas satisfying these constraints; it is non
 
 This logical consistency condition should not be conflated with a pointwise ordering between numerical evidence distributions. If one function counts positive descriptions satisfied by an interpretation and another counts negative descriptions satisfied by it, consistency implies disjoint supports, not in general an inequality between the two functions.
 
-**Implementation boundary:** the MONK runner uses this logical motivation to build and refine a DNF classifier. It does not implement the generalized pair of possibility distributions, nor the alternative construction that counts negations of counterexamples. Those are separate theoretical proposals.
+**Implementation boundary:** the MONK runner uses this logical motivation to build a DNF classifier from the fitting partition. It does not implement the generalized pair of possibility distributions, nor the alternative construction that counts negations of counterexamples. Those are separate theoretical proposals.
 
 ## 3. MONK benchmark
 
@@ -73,7 +73,7 @@ The files encode values categorically; the experiment uses those encoded values 
 
 ## 4. Methods in the MONK experiment
 
-The MONK runner evaluates twelve models per task: OCF, two Baseline variants, and nine supplementary classifiers.
+The MONK runner evaluates eleven models per task: OCF, one fit-only DNF Baseline, and nine supplementary classifiers.
 
 ### 4.1 OCF
 
@@ -97,14 +97,9 @@ The MONK runner defines `BaselineFormulaLearner` in `ocf-vs-baseline/runs/run_mo
 
 This is a greedy heuristic, not a guarantee of a globally minimum DNF. The score is the number of selected terms satisfied by x; prediction is positive when that score is greater than zero. Conflicting labels for an identical feature vector cannot be perfectly separated by any deterministic classifier using only those features.
 
-### 4.3 Original Baseline and Hypothesis Refinement
+### 4.3 Baseline fitting protocol
 
-Both variants start from the same fit partition:
-
-- **Original Baseline** learns from the fit partition only and applies its formula unchanged.
-- **Baseline with Hypothesis Refinement** adds the validation examples and counterexamples as further constraints, then rebuilds the DNF. New negative examples can invalidate broad terms; narrower safe terms may still cover positives.
-
-The refined variant uses validation labels by design. Report it separately from Original Baseline.
+Only the fit-only DNF Baseline is retained in the MONK benchmark. It is trained on the 90% fitting partition and applied unchanged to the validation and official test partitions. Validation labels are not used to refine its formula.
 
 ### 4.4 Supplementary classifiers
 
@@ -122,7 +117,7 @@ For each of MONK-1, MONK-2, and MONK-3, the runner:
 4. Uses 90% of official training rows for fitting and 10% for validation.
 5. Fits the nine supplementary classifiers on the fit rows.
 6. Computes OCF validation/test scores from the fit rows, chooses the threshold on validation, and evaluates on test.
-7. Fits Original Baseline on fit rows; fits a separate Baseline and refines it with validation rows.
+7. Fits the DNF Baseline on fit rows and applies it unchanged; validation rows are used only for OCF threshold selection and validation diagnostics.
 8. Saves per-repetition metrics, then computes means and sample standard deviations (ddof=1), sums confusion counts, and creates plots.
 
 | Setting | Value |
@@ -238,7 +233,7 @@ UCI outputs are stored in the dataset folders using the original `*-all-results.
 ## 10. Reporting recommendations
 
 1. Report the three MONK tasks separately; they have different target concepts and MONK-3 includes noise.
-2. Distinguish Original Baseline from Baseline with Hypothesis Refinement because the latter uses validation labels.
+2. Describe the MONK DNF Baseline as fit-only; do not imply that validation labels are used to refine its formula.
 3. Explain that the OCF threshold is selected on validation data.
 4. Always disclose the official train/test overlap when discussing MONK test metrics.
 5. Do not interpret the ten-run standard deviation as an independent-test confidence interval.
