@@ -31,6 +31,7 @@ class DeltaBaseline:
     """Generalized possibility distribution delta, built by cumulating +1 / -1 increments."""
 
     def __init__(self):
+        pass
 
     def fit(self, x, y):
         self.fallback = fallback_label(y)
@@ -75,7 +76,7 @@ def evaluate(dataset_name, sampling_ids):
         TP, TN, FP, FN = TP + tp, TN + tn, FP + fp, FN + fn
 
     n = len(sampling_ids)
-    result = {MODEL_NAME: model_name, TOTAL_TP: int(TP), TOTAL_TN: int(TN), TOTAL_FP: int(FP), TOTAL_FN: int(FN)}
+    result = {MODEL_NAME: MODEL_NAME_BASELINE, TOTAL_TP: int(TP), TOTAL_TN: int(TN), TOTAL_FP: int(FP), TOTAL_FN: int(FN)}
     for m, total in metric_sums.items():
         result[METRIC_NAME_TO_AVG_METRIC_FEATURE_NAME[m]] = total / n
     save_test_results_into_dataset(get_all_results_file_name(dataset_name), result)
