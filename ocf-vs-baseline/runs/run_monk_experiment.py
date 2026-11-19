@@ -4,9 +4,10 @@ Run from the repository root:
     python ocf-vs-baseline/runs/run_monk_experiment.py
 
 The official 432-row .test files are used unchanged for every repetition.
-All models use the same reproducible 90/10 fit/validation splits. Categorical
-supplementary models are one-hot encoded. The symbolic Baseline is fitted
-only on the 90% fit partition; validation labels are not used to refine it.
+The symbolic Baseline is fitted once on the complete official training file,
+without a train/validation split. OCF and supplementary classifiers retain
+reproducible 90/10 fit/validation splits. Categorical supplementary models
+are one-hot encoded.
 """
 from itertools import combinations
 from pathlib import Path
@@ -279,20 +280,24 @@ def evaluate_dataset(dataset_number):
         row.update(metrics(y_test, ocf_pred, -test_ocf))
         run_rows.append(row)
 
-        # Original Baseline: same fit partition, but no validation refinement.
-        original_baseline = BaselineFormulaLearner().fit(x_fit, y_fit)
-        original_test_score = original_baseline.score(x_test)
-        row = {
-            "dataset": dataset_number, "repeat": repeat,
-            "model": "Original Baseline",
-            "threshold": np.nan, "validation_youden": np.nan,
-            "validation_accuracy": float((original_baseline.predict(x_val) == y_val).mean()),
-            "uncovered_positive_patterns": len(original_baseline.uncovered_positives),
-            "conflicting_patterns": len(original_baseline.conflicting_patterns),
-        }
-        row.update(metrics(y_test, (original_test_score > 0).astype(int), original_test_score))
-        run_rows.append(row)
-
+    # Fit the symbolic Baseline once on every official training row.
+    # It has no validation split and is evaluated unchanged on the official test file.
+    x_train = train[FEATURES].to_numpy(dtype=object)
+    y_train = train["y"].to_numpy()
+    baseline = BaselineFormulaLearner().fit(x_train, y_train)
+    baseline_test_score = baseline.score(x_test)
+    baseline_row = {
+        "dataset": dataset_number, "repeat": 1,
+        "model": "Original Baseline",
+        "threshold": np.nan, "validation_youden": np.nan,
+        "training_rows_used": len(train),
+        "uncovered_positive_patterns": len(baseline.uncovered_positives),
+        "conflicting_patterns": len(baseline.conflicting_patterns),
+    }
+    baseline_row.update(metrics(
+        y_test, (baseline_test_score > 0).astype(int), baseline_test_score
+    ))
+    run_rows.append(baseline_row)
 
     return run_rows, {
         "dataset": dataset_number, "official_train_rows": len(train),
