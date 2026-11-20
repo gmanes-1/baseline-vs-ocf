@@ -9,7 +9,6 @@ without a train/validation split. OCF and supplementary classifiers retain
 reproducible 90/10 fit/validation splits. Categorical supplementary models
 are one-hot encoded.
 """
-from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +29,8 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     matthews_corrcoef, roc_auc_score, confusion_matrix,
 )
+
+from baseline import BaselineFormulaLearner
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "datasets"
@@ -101,111 +102,6 @@ def ocf_scores(query_x, reference_x, reference_y):
     contributions = np.where(reference_y[None, :, None] == 1,
                               mismatch_cost, CATEGORICAL_MISMATCH_COST - mismatch_cost)
     return contributions.sum(axis=(1, 2)).astype(float) - OCF_SHIFT
-
-
-class BaselineFormulaLearner:
-    """Learn a disjunction of conjunctive attribute-value hypotheses.
-
-    Fit first aggregates duplicate interpretations with delta(w) = positive
-    count - negative count. Interpretations with delta >= 0 are positive and
-    interpretations with delta < 0 are negative.
-
-    Formula construction generates safe terms (terms covering no known
-    negative interpretation), then greedily selects terms that cover the
-    largest number of still-uncovered positive interpretations. Ties prefer
-    shorter terms. Full-feature terms ensure every separable positive can be
-    covered.
-
-    The formula is learned from the fitting partition only. If an identical
-    feature vector has both labels, perfect separation is impossible; the
-    conflict is reported rather than hidden.
-    """
-
-    def __init__(self):
-        self.n_features = len(FEATURES)
-        self.positive_rows = set()
-        self.negative_rows = set()
-        self.terms = set()
-        self.uncovered_positives = set()
-        self.conflicting_patterns = set()
-
-    @staticmethod
-    def _term_matches(term, row):
-        cols, values = term
-        return all(row[col] == value for col, value in zip(cols, values))
-
-    def _rebuild_formula(self):
-        self.conflicting_patterns = self.positive_rows & self.negative_rows
-        positives = sorted(self.positive_rows - self.negative_rows)
-        negatives = self.negative_rows
-        if not positives:
-            self.terms = set()
-            self.uncovered_positives = set()
-            return
-
-        candidates = {}
-        for positive_index, row in enumerate(positives):
-            for size in range(1, self.n_features + 1):
-                for cols in combinations(range(self.n_features), size):
-                    values = tuple(row[col] for col in cols)
-                    term = (tuple(cols), values)
-                    if term in candidates:
-                        continue
-                    if any(self._term_matches(term, negative) for negative in negatives):
-                        continue
-                    coverage = {
-                        i for i, positive in enumerate(positives)
-                        if self._term_matches(term, positive)
-                    }
-                    if coverage:
-                        candidates[term] = coverage
-
-        uncovered = set(range(len(positives)))
-        selected = set()
-        while uncovered:
-            best_term = None
-            best_gain = 0
-            for term, coverage in candidates.items():
-                gain = len(coverage & uncovered)
-                if gain == 0:
-                    continue
-                if (gain > best_gain or
-                    (gain == best_gain and best_term is not None and
-                     (len(term[0]), term[0], tuple(map(str, term[1]))) <
-                     (len(best_term[0]), best_term[0], tuple(map(str, best_term[1]))))):
-                    best_term = term
-                    best_gain = gain
-            if best_term is None:
-                break
-            selected.add(best_term)
-            uncovered -= candidates[best_term]
-
-        self.terms = selected
-        self.uncovered_positives = {positives[i] for i in uncovered}
-
-    def fit(self, x, y):
-        x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
-        y = np.asarray(y).astype(int)
-        delta = {}
-        for row, label in zip(x, y):
-            key = tuple(row)
-            delta[key] = delta.get(key, 0) + (1 if label == 1 else -1)
-
-        self.positive_rows = {row for row, value in delta.items() if value >= 0}
-        self.negative_rows = {row for row, value in delta.items() if value < 0}
-        self._rebuild_formula()
-        return self
-
-    def score(self, x):
-        x = np.asarray(x, dtype=object).reshape(-1, self.n_features)
-        return np.asarray([
-            sum(self._term_matches(term, tuple(row)) for term in self.terms)
-            for row in x
-        ], dtype=float)
-
-    def predict(self, x):
-        return (self.score(x) > 0).astype(int)
-
 
 
 def build_supplementary_models():
