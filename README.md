@@ -89,7 +89,7 @@ The classification threshold is selected on the validation partition by maximizi
 
 ### 4.2 Symbolic Baseline DNF learner
 
-The MONK runner defines `BaselineFormulaLearner` in `ocf-vs-baseline/runs/run_monk_experiment.py`. It learns a disjunctive normal form: an OR of conjunctions of feature-value equality literals.
+The single implementation, `BaselineFormulaLearner`, is defined in `ocf-vs-baseline/runs/baseline.py` and imported by the MONK experiment runner. It learns a disjunctive normal form: an OR of conjunctions of feature-value equality literals.
 
 1. **Aggregate repeated vectors.** For each distinct vector w, compute Δ(w) = number of positive rows at w minus number of negative rows at w. Assign Δ(w) ≥ 0 to the positive set (ties are positive); otherwise assign it to the negative set.
 2. **Generate safe terms.** For each positive vector, generate conjunctions from every nonempty subset of its six feature positions. Retain a term only if it matches no known negative vector.
@@ -161,7 +161,7 @@ Paths are relative to the repository root.
 
 | Path | Purpose |
 |---|---|
-| `ocf-vs-baseline/runs/run_monk_experiment.py` | Complete MONK experiment implementation. |
+| `ocf-vs-baseline/runs/baseline.py` | The single implementation of the symbolic DNF Baseline learner. |\n| `ocf-vs-baseline/runs/run_monk_experiment.py` | MONK experiment orchestration, OCF, reference models, metrics, and plots. |
 | `ocf-vs-baseline/datasets/monks-1.train`, `monks-2.train`, `monks-3.train` | Official MONK training files. |
 | `ocf-vs-baseline/datasets/monks-1.test`, `monks-2.test`, `monks-3.test` | Official 432-row test/domain files. |
 | `ocf-vs-baseline/results/monk-experiment/` | Result tables, overlap diagnostic, and figures. |
@@ -238,7 +238,7 @@ UCI outputs are stored in the dataset folders using the original `*-all-results.
 4. Always disclose the official train/test overlap when discussing MONK test metrics.
 5. Do not interpret the ten-run standard deviation as an independent-test confidence interval.
 6. Describe the DNF learner as a greedy safe-term construction, not an exact minimum-formula solver.
-7. Keep the MONK DNF learner distinct from `BaselineExact`/`BaselineLiteral` and from the generalized possibility-distribution theory.
+7. Keep the implemented greedy DNF learner distinct from the generalized possibility-distribution theory; the repository contains only this one Baseline implementation.
 
 ## 11. References and source repositories
 
