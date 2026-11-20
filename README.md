@@ -166,7 +166,6 @@ Paths are relative to the repository root.
 | `ocf-vs-baseline/datasets/monks-1.test`, `monks-2.test`, `monks-3.test` | Official 432-row test/domain files. |
 | `ocf-vs-baseline/results/monk-experiment/` | Result tables, overlap diagnostic, and figures. |
 | `ocf-vs-baseline/requirements.txt` | Python dependencies. |
-| `ocf-vs-baseline/runs/runbaseline.py` | Exact-only `BaselineExact` implementation for the broader workflow, not the MONK DNF learner. |
 | `ocf-vs-baseline/runs/run_all_experiments.py` | Orchestrator for the broader UCI stages and MONK. |
 
 ## 8. Installation and run instructions
